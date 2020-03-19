@@ -1,0 +1,44 @@
+@Library('existing-build-control')
+import static com.r3.build.BuildControl.killAllExistingBuildsForJob
+
+killAllExistingBuildsForJob(env.JOB_NAME, env.BUILD_NUMBER.toInteger())
+
+pipeline {
+    agent {
+      dockerfile {
+        filename '.ci/Dockerfile'
+      }
+    }
+    options { timestamps() }
+
+    environment {
+        EXECUTOR_NUMBER = "${env.EXECUTOR_NUMBER}"
+        ARTIFACTORY_CREDENTIALS = credentials('artifactory-credentials')
+    }
+
+    stages {
+      stage('Build and run tests') {
+        steps {
+          sh "./gradlew clean test --stacktrace"
+        }
+      }
+
+      stage('Deploy') {
+        steps {
+          sh "./gradlew" +
+            " -D corda.artifactory.username=\"\${ARTIFACTORY_CREDENTIALS_USR}\" " +
+            " -Dcorda.artifactory.password=\"\${ARTIFACTORY_CREDENTIALS_PSW}\" " +
+            " artifactoryPublish --stacktrace"
+        }
+      }
+    }
+
+    post {
+      always {
+          junit '**/build/test-results/**/*.xml'
+      }
+      cleanup {
+          deleteDir() /* clean up our workspace */
+      }
+    }
+}
